@@ -8,6 +8,15 @@ const INF_MIN_PCT = 0.075;
 const INF_MAX_PCT = 0.10;
 const CAV_MIN_PCT = 0.10;
 
+const __css = getComputedStyle(document.documentElement);
+const __theme = {
+  bg: (__css.getPropertyValue('--bg') || '#0f1116').trim(),
+  panel: (__css.getPropertyValue('--panel') || '#1a1d24').trim(),
+  text: (__css.getPropertyValue('--text') || '#e8eaed').trim(),
+  muted: (__css.getPropertyValue('--muted') || '#9aa4b2').trim(),
+  border: (__css.getPropertyValue('--border') || '#2d3340').trim()
+}
+
 /* ---------- Basic Helpers ---------- */
 function num(id) {
   const el = document.getElementById(id);
@@ -143,6 +152,15 @@ function parseCompToFractions(str) {
   return { fin: i/sum, fcav: c/sum, farc: a/sum };
 }
 
+function percentile(arr, p) {
+  const a = [...arr].sort((x, y) => x - y);
+  const idx = (a.length - 1) * p;
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo === hi) return a[lo];
+  const w = idx - lo;
+  return a[lo] * (1 - w) + a[hi] * w;
+}
+
 function setCompInputFromBest() {
   const el = getCompEl();
   if (!el) return;
@@ -175,7 +193,7 @@ function getFractionsForRally() {
     return lastBestTriplet;
   }
 }
-/* ---------- Plot Rendering ---------- */
+/* ---------- Plot Rendering (improved) ---------- */
 function computePlots() {
   const stats = {
     inf_atk: num("inf_atk"),
@@ -187,73 +205,145 @@ function computePlots() {
   };
   const tierRaw = document.getElementById("troopTier").value;
 
+  // Your optimal/bounds logic (unchanged)
   const opt = computeExactOptimalFractions(stats, tierRaw);
   const bounded = enforceCompositionBounds(opt.fin, opt.fcav, opt.farc);
   lastBestTriplet = { fin: bounded.fin, fcav: bounded.fcav, farc: bounded.farc };
 
   if (!compUserEdited) setCompInputFromBest();
 
+  // Sample the simplex (unchanged step size; tweak steps for smoothness/perf)
   const samples = [];
   const vals = [];
   const steps = 55;
   for (let i = 0; i <= steps; i++) {
     for (let j = 0; j <= steps - i; j++) {
-      const fin = i/steps;
-      const fcav = j/steps;
+      const fin = i / steps;
+      const fcav = j / steps;
       const farc = 1 - fin - fcav;
-      const d = evaluateForPlot(fin, fcav, farc, stats, tierRaw);
+      const d = evaluateForPlot(fin, fcav, farc, stats, tierRaw); // your metric
       samples.push({ fin, fcav, farc, d });
       vals.push(d);
     }
   }
-  const vmax = Math.max(...vals);
-  const norm = vals.map(v => v/(vmax || 1));
 
-  Plotly.newPlot("ternaryPlot", [
-    {
-      type: "scatterternary",
-      mode: "markers",
-      a: samples.map(s => s.fin),
-      b: samples.map(s => s.fcav),
-      c: samples.map(s => s.farc),
-      marker: {
-        size: 6,
-        opacity: 0.95,
-        color: norm,
-        colorscale: "Plasma",
-        reversescale: false,
-        colorbar: { title:"Fraction of maximal damage", tickformat:".2f" }
-      },
-      hovertemplate:
-        "Inf: %{a:.2f}<br>Cav: %{b:.2f}<br>Arc: %{c:.2f}<br>Rel: %{marker.color:.3f}<extra></extra>"
+  // Normalize relative to max (as you had), *and* clip to 5–95th percentile
+  const vmax = Math.max(...vals);
+  const rel = vals.map(v => v / (vmax || 1));
+  const vminClip = percentile(rel, 0.05);
+  const vmaxClip = percentile(rel, 0.95);
+
+  // Build traces
+  const fieldTrace = {
+    type: "scatterternary",
+    mode: "markers",
+    a: samples.map(s => s.fin),
+    b: samples.map(s => s.fcav),
+    c: samples.map(s => s.farc),
+    marker: {
+      size: 5,
+      opacity: 0.95,
+      color: rel,
+      colorscale: "Viridis",          // better perceptual uniformity
+      cmin: vminClip,
+      cmax: vmaxClip,
+      line: { width: 0 },
+      colorbar: {
+        title: { text: "Fraction of maximal damage", font: { color: __theme.text } },
+        thickness: 16, len: 0.82,
+        tickformat: ".2f",
+        tickfont: { color: __theme.text },
+        tickcolor: __theme.muted,
+        outlinecolor: __theme.border,
+        x: 1.05,  // ← move colorbar slightly outside the plot
+        xanchor: "left"
+      }
     },
-    {
-      type: "scatterternary",
-      mode: "markers+text",
-      a: [bounded.fin],
-      b: [bounded.fcav],
-      c: [bounded.farc],
-      marker: { size:14, color:"#10b981" },
-      text: ["Best*"],
-      textposition: "top center",
-      hovertemplate:
-        "Best (bounded)<br>Inf: %{a:.2f}<br>Cav: %{b:.2f}<br>Arc: %{c:.2f}<extra></extra>"
+    hovertemplate:
+      "<b>Inf</b>: %{a:.2f}<br>" +
+      "<b>Cav</b>: %{b:.2f}<br>" +
+      "<b>Arc</b>: %{c:.2f}<br>" +
+      "<b>Rel</b>: %{marker.color:.3f}<extra></extra>",
+    name: "Surface"
+  };
+
+  const bestTrace = {
+    type: "scatterternary",
+    mode: "markers+text",
+    a: [bounded.fin],
+    b: [bounded.fcav],
+    c: [bounded.farc],
+    marker: {
+      size: 12,
+      color: "#10b981",
+      line: { color: "white", width: 1.6 }   // high-contrast outline
+    },
+    text: ["Best"],
+    textposition: "top center",
+    textfont: { color: __theme.text, size: 12 },
+    hovertemplate:
+      "Best (bounded)<br>Inf: %{a:.2f}<br>Cav: %{b:.2f}<br>Arc: %{c:.2f}<extra></extra>",
+    name: "Best"
+  };
+
+  // Layout tuned for readability
+const layout = {
+  template: "plotly_dark",
+  paper_bgcolor: __theme.panel,
+  plot_bgcolor: __theme.panel,
+  font: { color: __theme.text, size: 13 },
+  // ↑ bump margins so bottom labels have breathing room
+  margin: { l: 36, r: 64, b: 68, t: 52 },
+
+  title: { text: "Optimal Troop Composition", x: 0.02, font: { size: 20, color: __theme.text } },
+  showlegend: false,
+
+  ternary: {
+    sum: 1,
+    bgcolor: __theme.bg,
+
+    // ↑ lift the triangle a bit (and keep a little top padding)
+    domain: { x: [0.02, 0.96], y: [0.10, 0.98] },
+
+    aaxis: {
+      title: { text: "Infantry", font: { color: __theme.text } },
+      min: 0, ticks: "outside", tickformat: ".1f",
+      tickfont: { color: __theme.text, size: 11 },
+      tickcolor: __theme.muted, ticklen: 4,
+      gridcolor: "#3A3F45"
+    },
+    baxis: {
+      title: { text: "Cavalry", font: { color: __theme.text } },
+      min: 0, ticks: "outside", tickformat: ".1f",
+      tickfont: { color: __theme.text, size: 11 },
+      tickcolor: __theme.muted, ticklen: 4,
+      gridcolor: "#3A3F45"
+    },
+    caxis: {
+      title: { text: "Archery", font: { color: __theme.text } },
+      min: 0, ticks: "outside", tickformat: ".1f",
+      tickfont: { color: __theme.text, size: 11 },
+      tickcolor: __theme.muted, ticklen: 4,
+      gridcolor: "#3A3F45"
     }
-  ], {
-    ternary: {
-      aaxis: { title:"Infantry", min:0 },
-      baxis: { title:"Cavalry",  min:0 },
-      caxis: { title:"Archery",  min:0 },
-      sum: 1,
-      bgcolor: "#0f0f0f"
-    },
-    paper_bgcolor: "#111",
-    plot_bgcolor: "#111",
-    font: { color:"#fff" },
-    margin: { l:10, r:10, b:10, t:10 },
-    showlegend: false
+  }
+};
+
+  // Use react (faster updates, no memory leak), keep responsive
+  Plotly.react("ternaryPlot", [fieldTrace, bestTrace], layout, {
+    responsive: true,
+    displayModeBar: false // set to true if you want the toolbar
   });
 
+  // Optional once: keep it resizing smoothly inside your panel
+  if (!window.__ternaryResizeAttached) {
+    const el = document.getElementById("ternaryPlot");
+    const ro = new ResizeObserver(() => Plotly.Plots.resize(el));
+    ro.observe(el);
+    window.__ternaryResizeAttached = true;
+  }
+
+  // Your readout (unchanged)
   document.getElementById("bestReadout").innerText =
     `Best composition (bounded) ≈ ${formatTriplet(bounded.fin,bounded.fcav,bounded.farc)} (Inf/Cav/Arc) · [Inf 7.5–10%, Cav ≥ 10%].`;
 
