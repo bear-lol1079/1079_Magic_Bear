@@ -1,9 +1,9 @@
 /* ============================================================
    #1079 LoL App – Kingshot Bear Optimizer
-   FINAL CLEAN app.js (FULL, PART 1/4)
+   MAGIC (index1.html) — app1.js
    ============================================================ */
 
-console.log("app.js loaded");
+console.log("app1.js loaded");
 
 /* ------------------- Constants ------------------- */
 const WINDOWS = 5;
@@ -26,7 +26,7 @@ const CAV_MIN_PCT = 0.10;
 /* March fill quality threshold */
 const FILL_THRESHOLD = 0.923;
 
-/* NEW: strict minimum infantry per-march for Magic12 hybrid post-fix */
+/* strict minimum infantry per-march for Magic12 hybrid post-fix */
 const MIN_INF_PCT_MARCH = 0.05;
 
 let TIERS = null;
@@ -78,7 +78,7 @@ function toPctTriplet(fr){
 }
 
 /* ============================================================
-   DAMAGE ENGINE
+   DAMAGE ENGINE (unchanged)
    ============================================================ */
 function perTroopAttack(baseAtk){
   return baseAtk * (1 + BEAR_ATK_BONUS) * (BASE_LETHALITY/100);
@@ -119,9 +119,8 @@ function computeFormationDamage(pack, tierKey){
 }
 
 /* ============================================================
-   1:1 RATIO — ORIGINAL OPTIMIZER
+   1:1 RATIO — ORIGINAL OPTIMIZER (unchanged)
    ============================================================ */
-
 function attackFactor(atk, let_){
   return (1 + atk/100) * (1 + let_/100);
 }
@@ -179,10 +178,10 @@ function enforceBounds(fr){
   const S = i+c+a;
   return { fi:i/S, fc:c/S, fa:a/S };
 }
-/* ============================================================
-   MAGIC RATIO V2 (Call + Joins co-optimizer, stock-aware)
-   ============================================================ */
 
+/* ============================================================
+   MAGIC RATIO V2 (unchanged baseline builders)
+   ============================================================ */
 function coeffsByTier(tierKey){
   const t = TIERS?.tiers?.[tierKey];
   if(!t) return {inf:1, cav:1, arc:1};
@@ -203,10 +202,6 @@ function magicWeightsSquared(tierKey, mode){
   };
 }
 
-/**
- * Original weight-driven global planner.
- * Returns: { rally, packs, leftover, fractions }
- */
 function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
   const s = cloneStock(stockIn);
   const R = Math.max(0, rallySize|0);
@@ -217,7 +212,6 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
   const { wInf, wCav, wArc } = magicWeightsSquared(tierKey, mode);
   const sumW = Math.max(1e-9, wInf + wCav + wArc);
 
-  // Initial desired consumption (floored later by stock)
   const base = {
     inf: T * (wInf / sumW),
     cav: T * (wCav / sumW),
@@ -230,7 +224,6 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
     arc: Math.min(s.arc, Math.round(base.arc))
   };
 
-  // Redistribute any remaining capacity by priority (arc > cav > inf)
   let used = target.inf + target.cav + target.arc;
   let deficit = T - used;
   const prio = [["arc", wArc], ["cav", wCav], ["inf", wInf]].sort((a,b)=>b[1]-a[1]);
@@ -249,11 +242,9 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
     if (!progressed) break;
   }
 
-  // Global fractions for splitting R and each C
   const TT = Math.max(1, target.inf + target.cav + target.arc);
   const frac = { i: target.inf/TT, c: target.cav/TT, a: target.arc/TT };
 
-  // ---- Build CALL ----
   const rally = {
     inf: Math.min(s.inf, Math.round(frac.i * R)),
     cav: Math.min(s.cav, Math.round(frac.c * R)),
@@ -262,7 +253,6 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
   rally.arc = Math.min(s.arc, R - (rally.inf + rally.cav));
   s.inf -= rally.inf; s.cav -= rally.cav; s.arc -= rally.arc;
 
-  // ---- Build JOINS ----
   const joins = [];
   for (let i = 0; i < Xn; i++) {
     if (C <= 0) { joins.push({inf:0,cav:0,arc:0}); continue; }
@@ -280,9 +270,8 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
 }
 
 /* ============================================================
-   Recommendation support (fill quality)
+   Recommendation support
    ============================================================ */
-
 function meetsTargetFill(fill){ return fill >= FILL_THRESHOLD; }
 
 function evaluateMarchSet(packs, cap){
@@ -294,7 +283,6 @@ function evaluateMarchSet(packs, cap){
   return { minFill, avgFill, fullCount };
 }
 
-/* Simple join builder used by recommendation scan (fraction-based, stock-limited) */
 function buildJoinRallies(mode, stockIn, X, cap, tierKey, manualTriplet=null){
   const s = cloneStock(stockIn);
   const w = manualTriplet ? {inf:manualTriplet.i, cav:manualTriplet.c, arc:manualTriplet.a}
@@ -321,7 +309,6 @@ function buildJoinRallies(mode, stockIn, X, cap, tierKey, manualTriplet=null){
   return { packs, leftover: s };
 }
 
-/* Scan 1..X to recommend march count by fill quality + leftover penalty */
 function recommendMarchCount(mode, tierKey, rally, stockAfterCall, X, cap, manualTriplet){
   let best = null;
   for (let n=1; n<=X; n++){
@@ -333,10 +320,20 @@ function recommendMarchCount(mode, tierKey, rally, stockAfterCall, X, cap, manua
   return best;
 }
 
-/* ============================================================
-   RENDERING FUNCTIONS
-   ============================================================ */
+function safeRecommend(mode, tierKey, rally, stock0, X, cap, manual){
+  try {
+    const r = recommendMarchCount(mode, tierKey, rally, stock0, X, cap, manual);
+    if (!r || !r.metrics) return null;
+    return r;
+  } catch (e) {
+    console.warn("recommendMarchCount failed:", e);
+    return null;
+  }
+}
 
+/* ============================================================
+   RENDERING FUNCTIONS (tables)
+   ============================================================ */
 function renderCallTable(r){
   $("callRallyTable").innerHTML = `
     <table>
@@ -387,6 +384,7 @@ function renderJoinTable(joins){
   $("joinTableWrap").innerHTML = out;
 }
 
+/* Original compact scoreboard kept for 1:1 mode only */
 function renderScoreboardCompact(rally, joins, tierKey){
   const callScore = computeFormationDamage(rally, tierKey).finalScore;
   let joinScore = 0;
@@ -422,28 +420,20 @@ function renderScoreboardCompact(rally, joins, tierKey){
 
   $("scoreboardTableWrap").innerHTML = out;
 }
-/* ============================================================
-   HYBRID PRIORITY POST-FIX (for Magic12)
-   ------------------------------------------------------------
-   Keeps the weight-based plan, then:
-   - Guarantees per-march INF >= 5% of size
-   - Replaces excess INF with ARC first, then CAV, using leftover stock
-   - Never drops below the floor
-   ============================================================ */
 
+/* ============================================================
+   HYBRID PRIORITY POST-FIX (unchanged engine behavior)
+   ============================================================ */
 function ensureMinInf(march, minInf, stockLeftover){
   if (march.inf >= minInf) return;
   let need = minInf - march.inf;
 
-  // 1) Pull from leftover INF if available
   if (stockLeftover.inf > 0) {
     const take = Math.min(stockLeftover.inf, need);
     march.inf += take;
     stockLeftover.inf -= take;
     need -= take;
   }
-
-  // 2) If still short, convert inside the march (CAV -> INF, then ARC -> INF)
   if (need > 0) {
     const fromCav = Math.min(march.cav, need);
     march.cav -= fromCav;
@@ -462,17 +452,15 @@ function replaceExcessInfWithPriority(march, minInf, stockLeftover){
   let excess = Math.max(0, march.inf - minInf);
   if (excess <= 0) return 0;
 
-  // ARC first
   let toArc = Math.min(stockLeftover.arc, excess);
   if (toArc > 0) {
     march.arc += toArc;
     march.inf -= toArc;
     stockLeftover.arc -= toArc;
-    stockLeftover.inf += toArc; // those INF go back to leftover
+    stockLeftover.inf += toArc;
     excess -= toArc;
   }
 
-  // Then CAV
   let toCav = Math.min(stockLeftover.cav, excess);
   if (toCav > 0) {
     march.cav += toCav;
@@ -485,33 +473,19 @@ function replaceExcessInfWithPriority(march, minInf, stockLeftover){
   return toArc + toCav;
 }
 
-/**
- * Adjust the CALL rally to:
- *  - keep INF >= 5%   (already ensured later too)
- *  - clamp INF <= 20% of rally size
- *  - clamp CAV <= 30% of rally size
- *  - bias a bit more ARC in the call rally (pulling from leftover.arc)
- *
- * Mutates rally & leftover in place.
- */
 function adjustCallRallyCapsAndBias(rally, leftover, rallySize, opts = {}) {
   const minInf = Math.ceil(rallySize * MIN_INF_PCT_MARCH);
-  const maxInf = Math.floor(rallySize * (opts.maxInfPct ?? 0.20)); // 20%
-  const maxCav = Math.floor(rallySize * (opts.maxCavPct ?? 0.30)); // 30%
+  const maxInf = Math.floor(rallySize * (opts.maxInfPct ?? 0.20));
+  const maxCav = Math.floor(rallySize * (opts.maxCavPct ?? 0.30));
 
-  // --- 0) Ensure INF >= min floor ---
   if (rally.inf < minInf) {
     let need = minInf - rally.inf;
-
-    // Prefer pulling from leftover INF
     if (leftover.inf > 0) {
       const take = Math.min(leftover.inf, need);
       rally.inf += take;
       leftover.inf -= take;
       need -= take;
     }
-
-    // If still short, convert from rally CAV, then ARC
     if (need > 0) {
       const fromCav = Math.min(rally.cav, need);
       rally.cav -= fromCav; rally.inf += fromCav; need -= fromCav;
@@ -522,27 +496,21 @@ function adjustCallRallyCapsAndBias(rally, leftover, rallySize, opts = {}) {
     }
   }
 
-  // Helper to swap X units of one type into arc using leftover.arc
   function swapIntoArc(fromKey, amount) {
     if (amount <= 0 || leftover.arc <= 0) return 0;
     const give = Math.min(amount, leftover.arc);
     rally[fromKey] -= give;
     rally.arc += give;
-    // the removed troops from rally (fromKey) go back to leftovers of that type
     leftover.arc -= give;
     leftover[fromKey] += give;
     return give;
   }
 
-  // --- 1) Clamp INF down to maxInf by swapping into ARC first, then into CAV (if under cav cap) ---
   if (rally.inf > maxInf) {
     let cut = rally.inf - maxInf;
-
-    // Prefer ARC
     const arcTaken = swapIntoArc("inf", cut);
     cut -= arcTaken;
 
-    // If still over and we have CAV cap room + leftover.cav to keep totals legal
     if (cut > 0 && rally.cav < maxCav && leftover.cav > 0) {
       const cavRoom = maxCav - rally.cav;
       const give = Math.min(cut, cavRoom, leftover.cav);
@@ -552,35 +520,26 @@ function adjustCallRallyCapsAndBias(rally, leftover, rallySize, opts = {}) {
       leftover.inf += give;
       cut -= give;
     }
-    // If still over and no resources to swap → leave as is (post-fix will try again)
   }
 
-  // --- 2) Clamp CAV down to maxCav by swapping into ARC (best damage) ---
   if (rally.cav > maxCav) {
     let cut = rally.cav - maxCav;
-
-    // Prefer ARC via leftover.arc
     const arcFromCav = swapIntoArc("cav", cut);
     cut -= arcFromCav;
 
-    // If still above and no ARC available, last resort: shift to INF only if INF < maxInf
-    // (we avoid increasing INF beyond its cap)
     if (cut > 0 && rally.inf < maxInf) {
       const room = maxInf - rally.inf;
       const give = Math.min(cut, room);
       rally.cav -= give;
       rally.inf += give;
-      // return those CAV to leftover to keep totals balanced
       leftover.cav += give;
       cut -= give;
     }
   }
 
-  // --- 3) Bias: try to add a small extra ARC in call rally (default +3% of rally size) ---
   const biasPct = opts.arcBiasPct ?? 0.03;
   let want = Math.max(0, Math.ceil(rallySize * biasPct));
   if (want > 0 && leftover.arc > 0) {
-    // Free space by reducing INF above min first
     if (rally.inf > minInf) {
       const canReduceInf = rally.inf - minInf;
       const takeFromInf = Math.min(canReduceInf, want, leftover.arc);
@@ -590,7 +549,6 @@ function adjustCallRallyCapsAndBias(rally, leftover, rallySize, opts = {}) {
       leftover.inf += takeFromInf;
       want -= takeFromInf;
     }
-    // Then reduce CAV (but don't drop below 0, and we respect cav cap naturally since we're reducing)
     if (want > 0 && rally.cav > 0 && leftover.arc > 0) {
       const takeFromCav = Math.min(rally.cav, want, leftover.arc);
       rally.cav -= takeFromCav;
@@ -601,7 +559,6 @@ function adjustCallRallyCapsAndBias(rally, leftover, rallySize, opts = {}) {
     }
   }
 
-  // --- 4) Final sanity: keep INF >= min, and do not exceed caps (soft enforcement; post-fix will help too) ---
   if (rally.inf < minInf) {
     const need = minInf - rally.inf;
     const fromArc = Math.min(rally.arc, need);
@@ -613,13 +570,8 @@ function adjustCallRallyCapsAndBias(rally, leftover, rallySize, opts = {}) {
       rally.cav -= fromCav; rally.inf += fromCav;
     }
   }
-  // Do not attempt hard re-clamp here; the global post-fix will make another pass.
 }
 
-/**
- * Distribute ARC and CAV leftovers to reduce INF per march (down to 5%).
- * Operates on rally, joins, and the leftover object (mutates them).
- */
 function applyPriorityPostFix(rally, joins, leftover, rallySize, joinCap){
   const marches = [rally, ...joins];
   const mins = [Math.ceil(rallySize * MIN_INF_PCT_MARCH)];
@@ -627,17 +579,14 @@ function applyPriorityPostFix(rally, joins, leftover, rallySize, joinCap){
     mins.push(Math.ceil(joinCap * MIN_INF_PCT_MARCH));
   }
 
-  // 1) Guarantee each march meets the minimum INF floor
   for (let i=0; i<marches.length; i++){
     ensureMinInf(marches[i], mins[i], leftover);
   }
 
-  // 2) Replace any excess INF using ARC first, then CAV (global passes)
   const types = ["arc", "cav"];
   for (const t of types){
     if (leftover[t] <= 0) continue;
 
-    // Keep iterating as long as we can push more of this type
     let progressed = true;
     while (leftover[t] > 0 && progressed) {
       progressed = false;
@@ -652,28 +601,13 @@ function applyPriorityPostFix(rally, joins, leftover, rallySize, joinCap){
         const give = Math.min(excess, leftover[t]);
         if (give <= 0) continue;
 
-        // perform swap
         m.inf -= give;
         m[t]  += give;
         leftover[t] -= give;
         leftover.inf += give;
 
         const after = m.inf + m.cav + m.arc;
-        if (after !== before) {
-          // sanity: totals must not change
-          const delta = before - after;
-          if (delta !== 0) {
-            // revert if any rounding mishap
-            m.inf += give;
-            m[t]  -= give;
-            leftover[t] += give;
-            leftover.inf -= give;
-          } else {
-            progressed = true;
-          }
-        } else {
-          progressed = true;
-        }
+        if (after === before) progressed = true;
 
         if (leftover[t] <= 0) break;
       }
@@ -681,7 +615,6 @@ function applyPriorityPostFix(rally, joins, leftover, rallySize, joinCap){
   }
 }
 
-/* Utility: derive fractions actually used (for UI readout) */
 function deriveFractionsFromCompositions(rally, joins){
   let I = rally.inf, C = rally.cav, A = rally.arc;
   for (const p of joins){ I += p.inf; C += p.cav; A += p.arc; }
@@ -690,9 +623,120 @@ function deriveFractionsFromCompositions(rally, joins){
 }
 
 /* ============================================================
+   BEST-OF SWEEP (Top-10)
+   ============================================================ */
+function deriveJoinFractions(joins){
+  let I=0,C=0,A=0;
+  for (const p of joins){ I+=p.inf; C+=p.cav; A+=p.arc; }
+  const S = Math.max(1, I+C+A);
+  return { i: I/S, c: C/S, a: A/S };
+}
+
+function* generateTriplets(bounds, stepPct){
+  const step = Math.max(1, stepPct|0);
+  for (let i=bounds.infMin; i<=bounds.infMax; i+=step){
+    for (let c=bounds.cavMin; c<=bounds.cavMax; c+=step){
+      const a = 100 - i - c;
+      if (a < bounds.arcMin) continue;
+      if (a > bounds.arcMax) continue;
+      if (a < 0) continue;
+      yield { i:i/100, c:c/100, a:a/100, label:`${i}/${c}/${a}` };
+    }
+  }
+}
+
+function simulateTriplet(tierKey, stock0, rallySize, X, joinCap, triplet){
+  const cr = buildCallRally("ratio11", stock0, rallySize, tierKey, triplet);
+  const jr = buildJoinRallies("ratio11", cr.stockAfter, X, joinCap, tierKey, triplet);
+
+  const rally = cr.rally;
+  const joins = jr.packs;
+  const leftover = jr.leftover;
+
+  const lo = { inf:leftover.inf, cav:leftover.cav, arc:leftover.arc };
+  applyPriorityPostFix(rally, joins, lo, rallySize, joinCap);
+
+  const callScore = computeFormationDamage(rally, tierKey).finalScore;
+  let joinScore = 0;
+  for (const p of joins) joinScore += computeFormationDamage(p, tierKey).finalScore;
+
+  const usedCallFrac = (()=>{
+    const T = Math.max(1, rally.inf + rally.cav + rally.arc);
+    return { i:rally.inf/T, c:rally.cav/T, a:rally.arc/T };
+  })();
+  const usedJoinFrac = deriveJoinFractions(joins);
+
+  return {
+    call: rally,
+    joins,
+    leftover: lo,
+    callScore,
+    joinScore,
+    totalScore: callScore + joinScore,
+    usedCallFrac,
+    usedJoinFrac
+  };
+}
+
+function findTopSetups(tierKey, stock0, rallySize, X, joinCap, opts={}){
+  const CAV_MIN_PCT_SWEEP = 5;  // enforce Cavalry presence in recommended setups
+
+  const bounds = {
+    infMin: Math.round(MIN_INF_PCT_MARCH*100), // >= 5% INF per your rule
+    infMax: 40,
+    cavMin: CAV_MIN_PCT_SWEEP,                 // >= 5% CAV
+    cavMax: 45,
+    arcMin: 0,
+    arcMax: 100
+  };
+  const stepPct = Math.min(Math.max(1, opts.stepPct || 1), 5);
+
+  const results = [];
+  for (const triplet of generateTriplets(bounds, stepPct)){
+    const res = simulateTriplet(tierKey, cloneStock(stock0), rallySize, X, joinCap, triplet);
+    results.push({ triplet, ...res });
+  }
+
+  results.sort((a,b) => b.totalScore - a.totalScore);
+  return results.slice(0, 10);
+}
+
+function renderTopSetupsTable(rows){
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Call formation</th>
+          <th>Call score</th>
+          <th>Join formation</th>
+          <th>Join score</th>
+          <th>Total score</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  rows.forEach((r, idx) => {
+    const callTrip = toPctTriplet(r.usedCallFrac);
+    const joinTrip = toPctTriplet(r.usedJoinFrac);
+    html += `
+      <tr>
+        <td>${idx+1}</td>
+        <td>${callTrip}</td>
+        <td>${r.callScore.toLocaleString()}</td>
+        <td>${joinTrip}</td>
+        <td>${r.joinScore.toLocaleString()}</td>
+        <td><strong>${r.totalScore.toLocaleString()}</strong></td>
+      </tr>
+    `;
+  });
+  html += `</tbody></table>`;
+  $("scoreboardTableWrap").innerHTML = html;
+}
+
+/* ============================================================
    MAIN COMPUTE FLOW
    ============================================================ */
-
 function compute(mode){
   const tierKey = $("troopTier").value;
   const tier = TIERS?.tiers?.[tierKey];
@@ -716,27 +760,55 @@ function compute(mode){
 
   let rally, joins, leftover, fractions;
 
-  /* ------ MAGIC12 (Hybrid: weights + priority post-fix) ------ */
-if (mode === "magic12") {
-    let plan = planMagicAlloc("magic12", stock0, rallySize, X, joinCap, tierKey);
-    rally    = plan.rally;
-    joins    = plan.packs;
-    leftover = plan.leftover;
+  /* ------ MAGIC12: Top‑10 sweep + use #1 ------ */
+  if (mode === "magic12") {
+    const top10 = findTopSetups(tierKey, stock0, rallySize, X, joinCap, { stepPct: 1 });
 
-    // NEW — call improvements (this is all you need)
-    adjustCallRallyCapsAndBias(rally, leftover, rallySize, {
+    let rallyBest, joinsBest, leftoverBest;
+
+    if (top10 && top10.length) {
+      const best = top10[0];
+      rallyBest    = best.call;
+      joinsBest    = best.joins;
+      leftoverBest = best.leftover;
+
+      // Adjust caps/bias and re-apply post-fix
+      adjustCallRallyCapsAndBias(rallyBest, leftoverBest, rallySize, {
         maxInfPct: 0.20,
         maxCavPct: 0.30,
         arcBiasPct: 0.03
-    });
+      });
+      applyPriorityPostFix(rallyBest, joinsBest, leftoverBest, rallySize, joinCap);
 
-    // existing hybrid post-fix
-    applyPriorityPostFix(rally, joins, leftover, rallySize, joinCap);
+      // Replace scoreboard with Top‑10
+      renderTopSetupsTable(top10);
+    } else {
+      console.warn("Top-10 sweep returned empty; falling back to planMagicAlloc.");
+      const plan = planMagicAlloc("magic12", stock0, rallySize, X, joinCap, tierKey);
+      rallyBest    = plan.rally;
+      joinsBest    = plan.packs;
+      leftoverBest = plan.leftover;
 
-    fractions = deriveFractionsFromCompositions(rally, joins);
-}
+      adjustCallRallyCapsAndBias(rallyBest, leftoverBest, rallySize, {
+        maxInfPct: 0.20,
+        maxCavPct: 0.30,
+        arcBiasPct: 0.03
+      });
+      applyPriorityPostFix(rallyBest, joinsBest, leftoverBest, rallySize, joinCap);
 
-  /* ------ 1:1 RESTORED MODE ------ */
+      renderScoreboardCompact(rallyBest, joinsBest, tierKey);
+    }
+
+    rally    = rallyBest;
+    joins    = joinsBest;
+    leftover = leftoverBest;
+
+    // Call-only fractions for the readout
+    const tCall = Math.max(1, sumTroops(rally));
+    fractions = { i:rally.inf/tCall, c:rally.cav/tCall, a:rally.arc/tCall };
+  }
+
+  /* ------ 1:1 RESTORED MODE (unchanged) ------ */
   else {
     let stats = {
       inf_atk:nval("inf_atk"),
@@ -747,25 +819,19 @@ if (mode === "magic12") {
       arc_let:nval("arc_let")
     };
 
-    // Safe minimums so we never get 0 or NaN
     for (const k of ["inf_atk","inf_let","cav_atk","cav_let","arc_atk","arc_let"]) {
       if (!Number.isFinite(stats[k]) || stats[k] <= 0) stats[k] = 1;
     }
 
-    // Original optimizer → returns {fi,fc,fa}
     let opt = computeExactOptimalFractions(stats, tierKey);
     opt = enforceBounds(opt);
     if (!isFinite(opt.fi) || !isFinite(opt.fc) || !isFinite(opt.fa)) {
       opt = { fi:0.08, fc:0.12, fa:0.80 };
     }
 
-    // 🔧 Map to the shape builders expect: {i,c,a}
     const frac = { i: opt.fi, c: opt.fc, a: opt.fa };
-
-    // If user typed a manual override (Inf/Cav/Arc), use it; else use the mapped fractions
     const useFrac = manual ? manual : frac;
 
-    // Build call rally + joins using {i,c,a}
     const cr = buildCallRally("ratio11", stock0, rallySize, tierKey, useFrac);
     const jr = buildJoinRallies("ratio11", cr.stockAfter, X, joinCap, tierKey, useFrac);
 
@@ -773,22 +839,30 @@ if (mode === "magic12") {
     joins = jr.packs;
     leftover = jr.leftover;
 
-    // For UI readout
-    fractions = useFrac;
+    // For 1:1 readout, show the fractions used for the call rally only
+    const tCall = Math.max(1, sumTroops(rally));
+    fractions = { i:rally.inf/tCall, c:rally.cav/tCall, a:rally.arc/tCall };
+
+    // Compact scoreboard for 1:1
+    renderScoreboardCompact(rally, joins, tierKey);
   }
 
-  /* --- RECOMMENDATION SYSTEM (unchanged) --- */
-  const best = recommendMarchCount(
+  /* --- RECOMMENDATION (safe) --- */
+  const rec = safeRecommend(
     mode, tierKey, rally, cloneStock(stock0),
     X, joinCap, manual
   );
 
-  window.__recommendedMarches = best?.marchCount || X;
+  if (rec) {
+    window.__recommendedMarches = rec.marchCount;
+    $("recommendedDisplay").textContent =
+      `Best: ${rec.marchCount} marches (min ${(rec.metrics.minFill*100).toFixed(1)}%, avg ${(rec.metrics.avgFill*100).toFixed(1)}%)`;
+  } else {
+    window.__recommendedMarches = X;
+    $("recommendedDisplay").textContent = `–`;
+  }
 
-  $("recommendedDisplay").textContent =
-    `Best: ${window.__recommendedMarches} marches (min ${(best.metrics.minFill*100).toFixed(1)}%, avg ${(best.metrics.avgFill*100).toFixed(1)}%)`;
-
-  /* --- Display tables --- */
+  /* --- Display compositions & readouts --- */
   renderCallTable(rally);
   renderJoinTable(joins);
 
@@ -808,16 +882,18 @@ Leftover → INF ${leftover.inf}, CAV ${leftover.cav}, ARC ${leftover.arc}.
 
 Stock used: ${used} / ${before}.`;
 
-  renderScoreboardCompact(rally, joins, tierKey);
-
   $("hiddenLastMode").value = mode;
   $("hiddenBestFractions").value = toPctTriplet(fractions);
+
+  // Do not overwrite the Top‑10 for Magic12
+  if (mode !== "magic12") {
+    renderScoreboardCompact(rally, joins, tierKey);
+  }
 }
 
 /* ============================================================
    SIMPLE CALL BUILDER (used for 1:1 mode)
    ============================================================ */
-
 function buildCallRally(mode, stock, rallySize, tierKey, manual){
   const s = cloneStock(stock);
   if(rallySize <= 0) return {rally:{inf:0, cav:0, arc:0}, stockAfter:s};
@@ -847,18 +923,13 @@ function buildCallRally(mode, stock, rallySize, tierKey, manual){
 
   return { rally:r, stockAfter:s };
 }
+
 /* ============================================================
    EVENT WIRING
    ============================================================ */
 function wire(){
   const safe = (id) => document.getElementById(id);
 
-  safe("btnRatio11")?.addEventListener("click", () => {
-    // Activate the independent Option-A 1:1 optimization flow
-    window.__selectedMode = "ratio11";
-    onOptimize();        // full Option-A engine
-    updateRecommendedDisplay();
-  });
   safe("btnMagic12")?.addEventListener("click", () => compute("magic12"));
   safe("btnRecompute")?.addEventListener("click", () => {
     compute(safe("hiddenLastMode").value || "ratio11");
@@ -882,7 +953,7 @@ function wire(){
         : `Invalid or empty → auto fractions`;
   });
 }
-$("hiddenLastMode").value = "magic12";
+$("hiddenLastMode")?.setAttribute("value","magic12");
 
 /* ============================================================
    INIT
@@ -893,7 +964,24 @@ async function init(){
     TIERS = await res.json();
   } catch(e){
     console.error("tiers.json failed", e);
-    TIERS = { tiers:{} };
+    if (location.protocol === "file:") {
+      alert("Running from file:// blocks fetch of tiers.json.\nStart a local server or use Netlify.\nUsing a minimal inline fallback for testing.");
+      // Minimal skeleton to let the page render; replace with your real data if needed
+      TIERS = {
+        tiers: {
+          "T6":      { inf:[243],   cav:[243],   arc:[974]  },
+          "T9":      { inf:[1200],  cav:[1200],  arc:[1600] },
+          "T10":     { inf:[1473],  cav:[1416],  arc:[1888] },
+          "T10.TG1": { inf:[1473],  cav:[1473],  arc:[1964] },
+          "T10.TG2": { inf:[1515],  cav:[1546],  arc:[2062] },
+          "T10.TG3": { inf:[1541],  cav:[1624],  arc:[2165] },
+          "T10.TG4": { inf:[1568],  cav:[1705],  arc:[2273] },
+          "T10.TG5": { inf:[1597],  cav:[1790],  arc:[2387] }
+        }
+      };
+    } else {
+      TIERS = { tiers:{} };
+    }
   }
   wire();
   compute("magic12");
