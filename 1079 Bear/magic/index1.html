@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    :root{
+      --bg:#0f1116;
+      --panel:#1a1d24;
+      --muted:#9aa4b2;
+      --text:#e8eaed;
+      --accent:#3b82f6;
+      --accent-2:#2563eb;
+      --field:#222831;
+      --border:#2d3340;
+      --ok:#198754;
+      --ok-hover:#157347;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      background:var(--bg); color:var(--text);
+    }
+    header{ padding:24px 16px }
+    h1{ margin:0 0 16px }
+    h2{ margin:0 0 12px }
+    h3{ margin:0 0 10px }
+    .container{ max-width:1200px; margin:auto; padding:0 16px 24px }
+    .panel{
+      background:var(--panel); border-radius:12px; padding:20px; margin-bottom:18px;
+      border:1px solid var(--border); box-shadow:0 2px 12px rgba(0,0,0,.35);
+    }
+
+    label{ color:var(--muted); display:block; margin:8px 0 6px }
+    input,select{
+      width:100%; padding:12px; border-radius:8px; border:1px solid #333;
+      background:var(--field); color:white; outline:none;
+    }
+    input:focus,select:focus{
+      border-color:var(--accent); box-shadow:0 0 0 2px #3b82f644
+    }
+
+    .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:20px; }
+    .two-col { display:grid; grid-template-columns: 1fr 380px; gap: 18px; align-items:start; }
+    @media (max-width: 1020px){ .two-col{ grid-template-columns:1fr; } }
+    .inputs-sticky{ position:sticky; top:16px; }
+
+    .btn{
+      padding:12px 14px; background:var(--accent); border:0; border-radius:8px;
+      color:white; font-size:1rem; cursor:pointer; width:100%;
+    }
+    .btn:hover{ background:var(--accent-2) }
+    .btn-ok{ background:var(--ok); }
+    .btn-ok:hover{ background:var(--ok-hover); }
+
+    .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+
+    table{ width:100%; border-collapse:collapse; margin-top:12px;
+      background:#171b22; border-radius:8px; overflow:hidden; }
+    th,td{
+      padding:10px 12px; border-bottom:1px solid #272d3a; text-align:right;
+    }
+    th:first-child,td:first-child{ text-align:left; }
+    tr:last-child td{ border-bottom:0; }
+
+    .recommended-box{
+      margin-top:12px; padding:12px; background:#131821;
+      border:1px solid #2d3340; border-radius:8px;
+    }
+    .inline-row{ display:flex; justify-content:space-between;
+      align-items:center; gap:12px; flex-wrap:wrap; }
+
+    .muted{ color:var(--muted) }
+    .pill{
+      display:inline-block; padding:2px 8px; background:#0f172a;
+      border:1px solid #334155; border-radius:999px; font-size:.9rem;
+    }
+    #inventoryReadout { white-space:pre-line; }
+  </style>
+</head>
+
+<body>
+<header class="container">
+</header>
+
+<main class="container">
+
+  <!-- ==================== MAIN 2-COLUMN LAYOUT ==================== -->
+  <section class="panel">
+
+    <!-- LEFT SIDE: Scoreboard + Results -->
+    <div>
+      
+    <!-- RIGHT SIDE: Inputs + Action Buttons -->
+      <section class="panel">
+        <h2>Input Stats</h2>
+
+        <!-- Tier select -->
+        <label>Troop tier</label>
+        <select id="troopTier">
+          <option value="T6">T6</option>
+          <option value="T9">T9</option>
+          <option value="T10">T10</option>
+          <option value="T10.TG1" selected>T10.TG1</option>
+          <option value="T10.TG2">T10.TG2</option>
+          <option value="T10.TG3">T10.TG3</option>
+          <option value="T10.TG4">T10.TG4</option>
+          <option value="T10.TG5">T10.TG5</option>
+        </select>
+
+        <!-- Stats -->
+        <div class="grid" style="margin-top:8px">
+          <div>
+            <h3>Infantry</h3>
+            <label>Attack (%)</label>
+            <input id="inf_atk" type="number" step="0.1" value="481.6">
+            <label>Lethality (%)</label>
+            <input id="inf_let" type="number" step="0.1" value="284.4">
+          </div>
+
+          <div>
+            <h3>Cavalry</h3>
+            <label>Attack (%)</label>
+            <input id="cav_atk" type="number" step="0.1" value="493.1">
+            <label>Lethality (%)</label>
+            <input id="cav_let" type="number" step="0.1" value="311.8">
+          </div>
+
+          <div>
+            <h3>Archery</h3>
+            <label>Attack (%)</label>
+            <input id="arc_atk" type="number" step="0.1" value="508.8">
+            <label>Lethality (%)</label>
+            <input id="arc_let" type="number" step="0.1" value="479.7">
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top:8px">
+          <div>
+            <h3>Your available troops</h3>
+            <label>Infantry</label>
+            <input id="stockInf" type="number" min="0" value="200653">
+            
+            <label>Cavalry</label>
+            <input id="stockCav" type="number" min="0" value="180269">
+            
+            <label>Archers</label>
+            <input id="stockArc" type="number" min="0" value="301619">
+          </div>
+
+          <div>
+            <h3>Formation settings</h3>
+            <label>Call rally size</label>
+            <input id="rallySize" type="number" min="0" value="134850">
+
+            <label>Join cap</label>
+            <input id="marchSize" type="number" min="0" value="65000">
+
+            <label># of marches you have</label>
+            <input id="numFormations" type="number" min="1" value="6">
+          </div>
+        </div>
+
+        <!-- Manual composition -->
+        <label>Manual Call Rally composition (Inf/Cav/Arc)</label>
+        <input id="compInput" type="text" placeholder="e.g. 5/15/80">
+
+        <div id="compHint" class="muted" style="margin-top:6px"></div>
+
+        <!-- Action buttons -->
+        <div class="btn-row" style="margin-top:14px">
+
+          <button id="btnMagic12" class="btn btn-ok">1:2 Magic Ratio</button>
+        </div>
+
+
+        <input id="hiddenLastMode" type="hidden" value="magic12">
+        <input id="hiddenBestFractions" type="hidden" value="">
+      </section>
+
+      <!-- Score summary panel -->
+      <section class="panel">
+        <div class="inline-row">
+          <div class="pill">Score simulator</div>
+          <div id="selectedTierNote" class="muted"></div>
+        </div>
+
+        <div class="muted" style="margin-top:8px">
+          Select tier, enter stats & troops, then press <strong>1:1 Ratio</strong> or <strong>1:2 Magic Ratio</strong>.
+        </div>
+
+        <div class="recommended-box">
+          <div class="inline-row">
+            <div>
+              <div style="font-weight:600">Recommended marches</div>
+              <div id="recommendedDisplay" class="muted" style="margin-top:4px">…</div>
+            </div>
+            <button id="btnUseRecommended" class="btn btn-ok" style="width:auto;">🔥 Use Recommended</button>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px">
+          <div>
+            <div class="pill">Recommended Call Rally</div>
+            <div id="fractionReadout" class="muted" style="margin-top:8px"></div>
+          </div>
+
+          <div>
+            <div class="pill">Inventory result</div>
+            <div id="inventoryReadout" class="muted" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scoreboard -->
+      <section class="panel">
+        <h2>Scoreboard</h2>
+        <div class="muted" style="margin-bottom:8px">
+          Base dmg per type → 10 rounds → Final Score (ceiling)
+        </div>
+        <div id="scoreboardTableWrap"></div>
+      </section>
+
+      <!-- Compositions -->
+      <section class="panel">
+        <h2>Compositions</h2>
+
+        <div class="pill">Call rally</div>
+        <div id="callRallyTable" style="margin-top:10px"></div>
+
+        <div class="pill" style="margin-top:18px">Join rallies</div>
+        <div id="joinTableWrap" style="margin-top:10px"></div>
+      </section>
+
+    </div>
+
+  </section>
+</main>
+
+<script src="app1.js"></script>
+</body>
+</html>
